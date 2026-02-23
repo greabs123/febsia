@@ -45,7 +45,9 @@ function isMercadoLivreUrl(url) {
         /\/p\/MLB/i,
         /\/sec\/[A-Z0-9]+/i,
         /\/jump-to\/[A-Z0-9]+/i,
-        /\/redirect\/[A-Z0-9]+/i
+        /\/redirect\/[A-Z0-9]+/i,
+        /meli\.la\//i,              // ✅ Link encurtado do Mercado Livre
+        /mercadolibre\./i
     ];
     
     return mercadoLivrePatterns.some(pattern => pattern.test(url));
@@ -58,8 +60,8 @@ function isAmazonUrl(url) {
     const amazonPatterns = [
         /amazon\.com\.br/i,
         /amazon\.com/i,
-        /amzn\.to/i,
-        /a\.co/i,
+        /amzn\.to/i,                 // ✅ Link encurtado da Amazon
+        /a\.co/i,                    // ✅ Outro formato de link encurtado
         /\/dp\//i,
         /\/gp\//i,
         /\/product\//i,
@@ -68,132 +70,6 @@ function isAmazonUrl(url) {
     ];
     
     return amazonPatterns.some(pattern => pattern.test(urlLower));
-}
-
-function normalizeMercadoLivreUrl(url) {
-    console.log(`🔗 URL Mercado Livre original: ${url}`);
-    
-    try {
-        if (!url.startsWith('http')) {
-            url = 'https://' + url;
-        }
-        
-        const urlObj = new URL(url);
-        const paramsToRemove = [
-            'matt_tool', 'me', 'afiliado', 'utm_source', 'utm_medium', 
-            'utm_campaign', 'ref', 'source', 'afilio', 'partner', 'tracking',
-            'matt', 'tool', 'campaign', 'medium', 'source', 'matt_source',
-            'utm_content', 'utm_term', 'gclid', 'fbclid'
-        ];
-        
-        const searchParams = new URLSearchParams(urlObj.search);
-        let hadAffiliateParams = false;
-        
-        paramsToRemove.forEach(param => {
-            const paramLower = param.toLowerCase();
-            const keysToRemove = [];
-            
-            searchParams.forEach((value, key) => {
-                if (key.toLowerCase().includes(paramLower)) {
-                    keysToRemove.push(key);
-                    hadAffiliateParams = true;
-                }
-            });
-            
-            keysToRemove.forEach(key => {
-                searchParams.delete(key);
-            });
-        });
-        
-        urlObj.search = searchParams.toString();
-        let cleanUrl = urlObj.toString();
-        
-        let productId = null;
-        
-        if (cleanUrl.includes('MLB') || cleanUrl.includes('/p/')) {
-            const patterns = [
-                /(MLB[-_]?\d{9,})/i,
-                /\/p\/(MLB\d{9,})/i,
-                /\/produto\/(MLB[-_]?\d{9,})/i,
-                /\/item\/(MLB[-_]?\d{9,})/i,
-                /\/mlb\/(\d{9,})/i,
-                /[?&]id=(MLB\d{9,})/i,
-                /[?&]id=(\d{9,})/i,
-                /[?&]MLB=(\d{9,})/i,
-                /\/dp\/(MLB[-_]?\d{9,})/i,
-                /\/(MLB[-_]?\d{9,})-/i,
-                /-(\d{9,})-/
-            ];
-            
-            for (const pattern of patterns) {
-                const match = cleanUrl.match(pattern);
-                if (match) {
-                    productId = match[1] || match[0];
-                    productId = productId.toUpperCase();
-                    if (productId.includes('MLB')) {
-                        productId = productId.replace('MLB-', 'MLB').replace('MLB_', 'MLB');
-                    } else if (/^\d{9,}$/.test(productId)) {
-                        productId = 'MLB-' + productId;
-                    }
-                    break;
-                }
-            }
-        }
-        
-        let scrapingUrl = cleanUrl;
-        
-        console.log(`🔄 URL para scraping: ${scrapingUrl}`);
-        console.log(`🆔 ID detectado: ${productId || 'Não encontrado'}`);
-        
-        return {
-            success: true,
-            originalUrl: url,
-            scrapingUrl: scrapingUrl,
-            normalizedUrl: productId ? `https://produto.mercadolivre.com.br/${productId}` : scrapingUrl,
-            productId: productId,
-            isAffiliateLink: hadAffiliateParams || url.includes('/sec/') || url.includes('/jump-to/') || url.includes('/redirect/')
-        };
-        
-    } catch (error) {
-        console.error('❌ Erro ao normalizar URL:', error.message);
-        return {
-            success: false,
-            error: 'URL inválida: ' + error.message,
-            originalUrl: url
-        };
-    }
-}
-
-function normalizeAmazonUrl(url) {
-    console.log(`🔗 URL Amazon original: ${url}`);
-    
-    try {
-        if (!url.startsWith('http')) {
-            url = 'https://' + url;
-        }
-        
-        const urlObj = new URL(url);
-        let cleanUrl = url;
-        
-        console.log(`🔄 URL mantida para processamento: ${cleanUrl}`);
-        
-        return {
-            success: true,
-            originalUrl: url,
-            scrapingUrl: cleanUrl,
-            normalizedUrl: cleanUrl,
-            asin: null,
-            isAffiliateLink: url.includes('amzn.to') || url.includes('a.co')
-        };
-        
-    } catch (error) {
-        console.error('❌ Erro ao normalizar URL Amazon:', error.message);
-        return {
-            success: false,
-            error: 'URL inválida: ' + error.message,
-            originalUrl: url
-        };
-    }
 }
 
 async function followRedirects(url, maxRedirects = 5) {
@@ -258,6 +134,149 @@ async function followRedirects(url, maxRedirects = 5) {
             redirectCount: 0,
             redirectChain: [url],
             error: error.message
+        };
+    }
+}
+
+function normalizeMercadoLivreUrl(url) {
+    console.log(`🔗 URL Mercado Livre original: ${url}`);
+    
+    try {
+        if (!url.startsWith('http')) {
+            url = 'https://' + url;
+        }
+        
+        const urlObj = new URL(url);
+        
+        // ✅ Detecta se é link encurtado do meli.la
+        const isShortened = url.includes('meli.la/');
+        
+        const paramsToRemove = [
+            'matt_tool', 'me', 'afiliado', 'utm_source', 'utm_medium', 
+            'utm_campaign', 'ref', 'source', 'afilio', 'partner', 'tracking',
+            'matt', 'tool', 'campaign', 'medium', 'source', 'matt_source',
+            'utm_content', 'utm_term', 'gclid', 'fbclid'
+        ];
+        
+        const searchParams = new URLSearchParams(urlObj.search);
+        let hadAffiliateParams = false;
+        
+        paramsToRemove.forEach(param => {
+            const paramLower = param.toLowerCase();
+            const keysToRemove = [];
+            
+            searchParams.forEach((value, key) => {
+                if (key.toLowerCase().includes(paramLower)) {
+                    keysToRemove.push(key);
+                    hadAffiliateParams = true;
+                }
+            });
+            
+            keysToRemove.forEach(key => {
+                searchParams.delete(key);
+            });
+        });
+        
+        urlObj.search = searchParams.toString();
+        let cleanUrl = urlObj.toString();
+        
+        let productId = null;
+        
+        if (cleanUrl.includes('MLB') || cleanUrl.includes('/p/')) {
+            const patterns = [
+                /(MLB[-_]?\d{9,})/i,
+                /\/p\/(MLB\d{9,})/i,
+                /\/produto\/(MLB[-_]?\d{9,})/i,
+                /\/item\/(MLB[-_]?\d{9,})/i,
+                /\/mlb\/(\d{9,})/i,
+                /[?&]id=(MLB\d{9,})/i,
+                /[?&]id=(\d{9,})/i,
+                /[?&]MLB=(\d{9,})/i,
+                /\/dp\/(MLB[-_]?\d{9,})/i,
+                /\/(MLB[-_]?\d{9,})-/i,
+                /-(\d{9,})-/
+            ];
+            
+            for (const pattern of patterns) {
+                const match = cleanUrl.match(pattern);
+                if (match) {
+                    productId = match[1] || match[0];
+                    productId = productId.toUpperCase();
+                    if (productId.includes('MLB')) {
+                        productId = productId.replace('MLB-', 'MLB').replace('MLB_', 'MLB');
+                    } else if (/^\d{9,}$/.test(productId)) {
+                        productId = 'MLB-' + productId;
+                    }
+                    break;
+                }
+            }
+        }
+        
+        let scrapingUrl = cleanUrl;
+        
+        // ✅ Para links encurtados, mantemos a URL original para seguir redirecionamentos
+        if (isShortened) {
+            scrapingUrl = url; // Usa a URL encurtada original para seguir o redirect
+            console.log(`🔄 Link encurtado detectado, usando para redirecionamento: ${scrapingUrl}`);
+        }
+        
+        console.log(`🔄 URL para scraping: ${scrapingUrl}`);
+        console.log(`🆔 ID detectado: ${productId || 'Não encontrado'}`);
+        
+        return {
+            success: true,
+            originalUrl: url,
+            scrapingUrl: scrapingUrl,
+            normalizedUrl: productId ? `https://produto.mercadolivre.com.br/${productId}` : scrapingUrl,
+            productId: productId,
+            isAffiliateLink: hadAffiliateParams || url.includes('/sec/') || url.includes('/jump-to/') || url.includes('/redirect/') || isShortened,
+            isShortened: isShortened
+        };
+        
+    } catch (error) {
+        console.error('❌ Erro ao normalizar URL:', error.message);
+        return {
+            success: false,
+            error: 'URL inválida: ' + error.message,
+            originalUrl: url
+        };
+    }
+}
+
+function normalizeAmazonUrl(url) {
+    console.log(`🔗 URL Amazon original: ${url}`);
+    
+    try {
+        if (!url.startsWith('http')) {
+            url = 'https://' + url;
+        }
+        
+        const urlObj = new URL(url);
+        
+        // ✅ Detecta se é link encurtado (amzn.to ou a.co)
+        const isShortened = url.includes('amzn.to/') || url.includes('a.co/');
+        
+        let cleanUrl = url;
+        
+        console.log(`🔄 URL mantida para processamento: ${cleanUrl}`);
+        console.log(`🔄 Link encurtado: ${isShortened ? 'Sim' : 'Não'}`);
+        
+        return {
+            success: true,
+            originalUrl: url,
+            scrapingUrl: cleanUrl,
+            normalizedUrl: cleanUrl,
+            asin: null,
+            isAffiliateLink: isShortened,
+            isShortened: isShortened
+        };
+        
+    } catch (error) {
+        console.error('❌ Erro ao normalizar URL Amazon:', error.message);
+        return {
+            success: false,
+            error: 'URL inválida: ' + error.message,
+            originalUrl: url
         };
     }
 }
@@ -809,8 +828,8 @@ app.post('/api/extract', async (req, res) => {
             return res.status(400).json({
                 error: true,
                 message: 'Isso não parece ser um link do Mercado Livre',
-                suggestion: 'Use um link que comece com mercadolivre.com.br',
-                example: 'https://produto.mercadolivre.com.br/MLB-1234567890'
+                suggestion: 'Use um link que comece com mercadolivre.com.br ou meli.la',
+                example: 'https://produto.mercadolivre.com.br/MLB-1234567890 ou https://meli.la/1r1BBFY'
             });
         }
         
@@ -826,9 +845,13 @@ app.post('/api/extract', async (req, res) => {
         }
         
         let finalUrl = normalized.scrapingUrl;
-        if (normalized.isAffiliateLink || normalized.scrapingUrl.includes('/sec/')) {
+        
+        // ✅ Segue redirecionamentos se for link encurtado ou de afiliado
+        if (normalized.isAffiliateLink || normalized.isShortened || normalized.scrapingUrl.includes('/sec/')) {
+            console.log('🔍 Link encurtado/afiliado detectado, seguindo redirecionamentos...');
             const redirectResult = await followRedirects(normalized.scrapingUrl);
             finalUrl = redirectResult.finalUrl;
+            console.log(`🏁 URL final após redirecionamentos: ${finalUrl}`);
         }
         
         const result = await scrapeMercadoLivre(finalUrl);
@@ -842,7 +865,8 @@ app.post('/api/extract', async (req, res) => {
                     normalized_url: normalized.normalizedUrl,
                     scraping_url: finalUrl,
                     product_id: normalized.productId,
-                    was_normalized: normalized.isAffiliateLink,
+                    was_normalized: normalized.isAffiliateLink || normalized.isShortened,
+                    was_shortened: normalized.isShortened,
                     extraction_method: 'mercado_livre'
                 }
             };
@@ -856,7 +880,8 @@ app.post('/api/extract', async (req, res) => {
                 debug: {
                     original: normalized.originalUrl,
                     scraping_url: finalUrl,
-                    is_affiliate: normalized.isAffiliateLink
+                    is_affiliate: normalized.isAffiliateLink,
+                    is_shortened: normalized.isShortened
                 }
             });
         }
@@ -890,8 +915,8 @@ app.post('/api/extract-amazon', async (req, res) => {
             return res.status(400).json({
                 error: true,
                 message: 'Isso não parece ser um link da Amazon',
-                suggestion: 'Use um link que comece com amazon.com.br',
-                example: 'https://www.amazon.com.br/dp/B08N5WRWNW'
+                suggestion: 'Use um link que comece com amazon.com.br, amzn.to ou a.co',
+                example: 'https://www.amazon.com.br/dp/B08N5WRWNW ou https://amzn.to/4qjSzCV'
             });
         }
         
@@ -924,7 +949,7 @@ app.post('/api/extract-amazon', async (req, res) => {
                     scraping_url: finalUrl,
                     redirect_count: redirectResult.redirectCount,
                     redirect_chain: redirectResult.redirectChain,
-                    was_shortened: normalized.isAffiliateLink,
+                    was_shortened: normalized.isShortened,
                     extraction_method: 'amazon'
                 }
             };
@@ -938,7 +963,7 @@ app.post('/api/extract-amazon', async (req, res) => {
                 debug: {
                     original: normalized.originalUrl,
                     scraping_url: finalUrl,
-                    is_shortened: normalized.isAffiliateLink,
+                    is_shortened: normalized.isShortened,
                     redirect_chain: redirectResult.redirectChain
                 }
             });
@@ -969,8 +994,8 @@ app.get('/api/health', (req, res) => {
             'high_quality_images'
         ],
         endpoints: {
-            'POST /api/extract': 'Extrair dados do Mercado Livre',
-            'POST /api/extract-amazon': 'Extrair dados da Amazon com imagens de alta qualidade'
+            'POST /api/extract': 'Extrair dados do Mercado Livre (suporta links encurtados meli.la)',
+            'POST /api/extract-amazon': 'Extrair dados da Amazon com imagens de alta qualidade (suporta amzn.to, a.co)'
         }
     });
 });
@@ -981,23 +1006,25 @@ app.get('/', (req, res) => {
         version: '3.2.0',
         description: 'API para extrair dados de produtos do Mercado Livre e Amazon (com imagens em alta qualidade)',
         endpoints: {
-            'POST /api/extract': 'Extrair dados do Mercado Livre',
-            'POST /api/extract-amazon': 'Extrair dados da Amazon',
+            'POST /api/extract': 'Extrair dados do Mercado Livre - Suporta meli.la',
+            'POST /api/extract-amazon': 'Extrair dados da Amazon - Suporta amzn.to, a.co',
             'GET /api/health': 'Status do serviço'
         },
         features: [
             'Extrai título, preço e imagem de produtos',
             'Suporte a Mercado Livre e Amazon',
+            '✅ Suporte a links encurtados: meli.la, amzn.to, a.co',
             'Imagens em alta qualidade para Amazon',
-            'Suporte a links encurtados (amzn.to, a.co)',
+            'Suporte a links de afiliado',
             'Limpeza automática de parâmetros de afiliado',
             'Seguimento de redirecionamentos',
             'Multiplas estratégias de fallback'
         ],
         examples: {
-            mercado_livre: 'https://produto.mercadolivre.com.br/MLB-1234567890',
-            amazon: 'https://www.amazon.com.br/dp/B08N5WRWNW',
-            amazon_shortened: 'https://amzn.to/4qjSzCV'
+            mercado_livre_direto: 'https://produto.mercadolivre.com.br/MLB-1234567890',
+            mercado_livre_encurtado: 'https://meli.la/1r1BBFY',  // ✅ Funciona!
+            amazon_direto: 'https://www.amazon.com.br/dp/B08N5WRWNW',
+            amazon_encurtado: 'https://amzn.to/4qjSzCV'          // ✅ Funciona!
         }
     });
 });
@@ -1009,10 +1036,10 @@ app.listen(PORT, () => {
     console.log(`✅ Servidor: http://localhost:${PORT}`);
     console.log(`📡 Health: http://localhost:${PORT}/api/health`);
     console.log('');
-    console.log('🌟 SUPORTE:');
-    console.log('   • Mercado Livre - Qualquer link');
-    console.log('   • Amazon - Links diretos, encurtados e afiliados');
-    console.log('   • Imagens em alta qualidade para Amazon');
+    console.log('🌟 SUPORTE A LINKS ENCURTADOS:');
+    console.log('   • Mercado Livre: meli.la/XXXXX ✅');
+    console.log('   • Amazon: amzn.to/XXXXX ✅');
+    console.log('   • Amazon: a.co/XXXXX ✅');
     console.log('');
     console.log('📋 ENDPOINTS:');
     console.log('   POST /api/extract          - Extrair dados do Mercado Livre');
@@ -1020,7 +1047,8 @@ app.listen(PORT, () => {
     console.log('');
     console.log('💡 EXEMPLOS:');
     console.log('   • https://produto.mercadolivre.com.br/MLB-1234567890');
+    console.log('   • https://meli.la/1r1BBFY (✅ link encurtado)');
     console.log('   • https://www.amazon.com.br/dp/B08N5WRWNW');
-    console.log('   • https://amzn.to/4qjSzCV (links encurtados)');
+    console.log('   • https://amzn.to/4qjSzCV (✅ link encurtado)');
     console.log('='.repeat(70));
 });
