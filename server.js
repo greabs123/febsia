@@ -2,7 +2,6 @@ const express = require('express');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const cors = require('cors');
-const imglyRemoveBg = require('@imgly/background-removal-node');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -999,40 +998,6 @@ app.get('/api/health', (req, res) => {
             'POST /api/extract-amazon': 'Extrair dados da Amazon com imagens de alta qualidade (suporta amzn.to, a.co)'
         }
     });
-});
-
-app.post('/api/remove-bg', async (req, res) => {
-    try {
-        const { image } = req.body;
-
-        if (!image) {
-            return res.status(400).json({ error: 'Imagem não encontrada' });
-        }
-
-        // Remove o prefixo base64 se existir (ex: "data:image/png;base64,...")
-        const base64Data = image.includes(',') ? image.split(',')[1] : image;
-        const imageBuffer = Buffer.from(base64Data, 'base64');
-
-        console.log('🎨 Removendo fundo da imagem...');
-
-        // Converte buffer para Blob (necessário para a biblioteca)
-        const blob = new Blob([imageBuffer]);
-
-        // Remove o fundo
-        const resultBlob = await imglyRemoveBg.removeBackground(blob);
-
-        // Converte o resultado de volta para base64
-        const resultBuffer = Buffer.from(await resultBlob.arrayBuffer());
-        const resultBase64 = resultBuffer.toString('base64');
-
-        console.log('✅ Fundo removido com sucesso!');
-
-        res.json({ image: `data:image/png;base64,${resultBase64}` });
-
-    } catch (error) {
-        console.error('❌ Erro ao remover fundo:', error.message);
-        res.status(500).json({ error: error.message });
-    }
 });
 
 app.get('/', (req, res) => {
