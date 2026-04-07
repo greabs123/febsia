@@ -1031,7 +1031,7 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
     console.log('\n' + '='.repeat(70));
-    console.log('🚀 PRODUCT SCRAPER API v3.3.0 - MERCADO LIVRE & AMAZON & REMOVE BG');
+    console.log('🚀 PRODUCT SCRAPER API v3.2.0 - MERCADO LIVRE & AMAZON (ALTA QUALIDADE)');
     console.log('='.repeat(70));
     console.log(`✅ Servidor: http://localhost:${PORT}`);
     console.log(`📡 Health: http://localhost:${PORT}/api/health`);
